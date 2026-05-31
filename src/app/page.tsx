@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Drama = {
   id: number;
@@ -71,11 +71,78 @@ const dramas: Drama[] = [
 
 const categories = ["Terbaru", "Populer", "Romantis", "Action", "Kostum"];
 type Tab = "home" | "vip" | "request" | "akun";
+type VipPlan = {
+  id: string;
+  days: number;
+  price: number;
+  isPopular?: boolean;
+  note: string;
+};
+
+type TelegramUser = {
+  id: number;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  language_code?: string;
+  is_premium?: boolean;
+};
+
+const vipPlans: VipPlan[] = [
+  { id: "vip_1", days: 1, price: 12000, note: "Cocok untuk coba dulu." },
+  { id: "vip_3", days: 3, price: 30000, note: "Lebih hemat untuk maraton." },
+  {
+    id: "vip_7",
+    days: 7,
+    price: 60000,
+    isPopular: true,
+    note: "Paling favorit pengguna.",
+  },
+  { id: "vip_15", days: 15, price: 110000, note: "Buat yang nonton rutin." },
+  {
+    id: "vip_30",
+    days: 30,
+    price: 199000,
+    note: "Best value, akses paling panjang.",
+  },
+];
 
 export default function Home() {
   const [query, setQuery] = useState("");
   const [selectedDrama, setSelectedDrama] = useState<Drama | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("home");
+  const [requestTitle, setRequestTitle] = useState("");
+  const [requestGenre, setRequestGenre] = useState("Romantis");
+  const [requestNote, setRequestNote] = useState("");
+  const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
+
+  useEffect(() => {
+    const webAppUser = (
+      window as Window & {
+        Telegram?: {
+          WebApp?: {
+            initDataUnsafe?: {
+              user?: TelegramUser;
+            };
+          };
+        };
+      }
+    ).Telegram?.WebApp?.initDataUnsafe?.user;
+
+    if (webAppUser) {
+      setTelegramUser(webAppUser);
+      return;
+    }
+
+    setTelegramUser({
+      id: 11770001,
+      first_name: "Sahabat",
+      last_name: "Drama",
+      username: "dramalover",
+      language_code: "id",
+      is_premium: false,
+    });
+  }, []);
 
   const filteredDramas = useMemo(() => {
     return dramas.filter((drama) =>
@@ -87,26 +154,49 @@ export default function Home() {
     return (
       <main className="min-h-screen bg-[#080A12] text-white">
         <div className="mx-auto max-w-md px-4 pb-24 pt-5">
-          <h1 className="text-2xl font-bold text-[#F6D58B]">Paket VIP</h1>
-          <p className="mt-1 text-sm text-white/60">
-            Pilih paket akses premium DramaKu VIP.
-          </p>
+          <section className="overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-[#212954] via-[#12172A] to-[#090C16] p-5 shadow-xl">
+            <p className="text-xs text-[#DAB970]">Keanggotaan Eksklusif</p>
+            <h1 className="mt-1 text-2xl font-bold text-[#F6D58B]">Paket VIP</h1>
+            <p className="mt-2 text-sm text-white/70">
+              Semua episode VIP terbuka penuh selama masa aktif paket.
+            </p>
+          </section>
 
           <div className="mt-5 space-y-3">
-            {[
-              { title: "VIP 1 Hari", desc: "Akses penuh selama 24 jam." },
-              { title: "VIP 7 Hari", desc: "Paket hemat untuk seminggu." },
-              { title: "VIP 10 Hari", desc: "Akses paling populer." },
-            ].map((plan) => (
+            {vipPlans.map((plan) => (
               <button
-                key={plan.title}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
+                key={plan.id}
+                className={`w-full rounded-2xl border p-4 text-left transition ${
+                  plan.isPopular
+                    ? "border-[#F6D58B]/60 bg-[#F6D58B]/10 shadow-lg shadow-[#F6D58B]/10"
+                    : "border-white/10 bg-white/5"
+                }`}
               >
-                <h2 className="font-bold">{plan.title}</h2>
-                <p className="mt-1 text-sm text-white/60">{plan.desc}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-white/60">VIP {plan.days} Hari</p>
+                    <h2 className="mt-1 text-xl font-bold text-white">
+                      Rp {plan.price.toLocaleString("id-ID")}
+                    </h2>
+                    <p className="mt-1 text-sm text-white/60">{plan.note}</p>
+                  </div>
+                  {plan.isPopular && (
+                    <span className="rounded-full bg-[#F6D58B] px-3 py-1 text-xs font-bold text-black">
+                      Terlaris
+                    </span>
+                  )}
+                </div>
               </button>
             ))}
           </div>
+
+          <button className="mt-5 w-full rounded-2xl bg-[#F6D58B] py-3 font-bold text-black">
+            Lanjut Pembayaran
+          </button>
+          <p className="mt-2 text-center text-xs text-white/40">
+            Harga bisa kamu ubah nanti dari admin panel.
+          </p>
+          <div className="h-2" />
         </div>
 
         <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
@@ -118,24 +208,53 @@ export default function Home() {
     return (
       <main className="min-h-screen bg-[#080A12] text-white">
         <div className="mx-auto max-w-md px-4 pb-24 pt-5">
-          <h1 className="text-2xl font-bold text-[#F6D58B]">Request Film</h1>
-          <p className="mt-1 text-sm text-white/60">
-            Tulis judul drama yang kamu mau, nanti kami cek untuk ditambahkan.
-          </p>
+          <section className="overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-[#22363E] via-[#0E1C24] to-[#091019] p-5 shadow-xl">
+            <p className="text-xs text-[#A9DFEE]">Konten Favoritmu</p>
+            <h1 className="mt-1 text-2xl font-bold text-white">
+              Request Film & Drama
+            </h1>
+            <p className="mt-2 text-sm text-white/70">
+              Kirim judul yang kamu cari, tim kami akan proses secepatnya.
+            </p>
+          </section>
 
-          <div className="mt-5 space-y-3">
+          <div className="mt-5 space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <input
-              placeholder="Judul drama / film"
-              className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm outline-none placeholder:text-white/40"
+              value={requestTitle}
+              onChange={(event) => setRequestTitle(event.target.value)}
+              placeholder="Contoh: The Legend of Shen Li"
+              className="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm outline-none placeholder:text-white/40 focus:border-cyan-300"
             />
+            <select
+              value={requestGenre}
+              onChange={(event) => setRequestGenre(event.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm outline-none focus:border-cyan-300"
+            >
+              <option>Romantis</option>
+              <option>Action</option>
+              <option>Kostum</option>
+              <option>Modern Drama</option>
+              <option>Lainnya</option>
+            </select>
             <textarea
-              placeholder="Catatan tambahan (opsional)"
+              value={requestNote}
+              onChange={(event) => setRequestNote(event.target.value)}
+              placeholder="Catatan tambahan: tahun rilis, aktor favorit, atau alasan request."
               rows={4}
-              className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm outline-none placeholder:text-white/40"
+              className="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm outline-none placeholder:text-white/40 focus:border-cyan-300"
             />
-            <button className="w-full rounded-2xl bg-[#F6D58B] py-3 font-bold text-black">
+            <button className="w-full rounded-xl bg-cyan-300 py-3 font-bold text-[#0A1B25]">
               Kirim Request
             </button>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-sm text-white/70">Tips request cepat diproses:</p>
+            <ul className="mt-2 space-y-1 text-xs text-white/50">
+              <li>• Tulis judul sejelas mungkin.</li>
+              <li>• Tambahkan genre atau tahun rilis.</li>
+              <li>• Gunakan 1 judul per request.</li>
+            </ul>
           </div>
         </div>
 
@@ -145,18 +264,42 @@ export default function Home() {
   }
 
   if (activeTab === "akun") {
+    const displayName = `${telegramUser?.first_name ?? "Pengguna"} ${
+      telegramUser?.last_name ?? ""
+    }`.trim();
+
     return (
       <main className="min-h-screen bg-[#080A12] text-white">
         <div className="mx-auto max-w-md px-4 pb-24 pt-5">
-          <h1 className="text-2xl font-bold text-[#F6D58B]">Akun Saya</h1>
-          <p className="mt-1 text-sm text-white/60">
-            Informasi akun dan status langganan VIP kamu.
-          </p>
+          <section className="overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-[#352C4D] via-[#171326] to-[#0B0D16] p-5 shadow-xl">
+            <p className="text-xs text-purple-200">Profil Telegram</p>
+            <h1 className="mt-1 text-2xl font-bold text-white">Akun Saya</h1>
+            <p className="mt-2 text-sm text-white/70">
+              Data user ditarik dari Telegram Mini App.
+            </p>
+          </section>
 
-          <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p className="text-sm text-white/60">Status VIP</p>
-            <p className="mt-1 font-bold">Belum aktif</p>
+          <div className="mt-5 space-y-3">
+            <ProfileRow label="Nama" value={displayName} />
+            <ProfileRow label="User ID" value={String(telegramUser?.id ?? "-")} />
+            <ProfileRow
+              label="Username"
+              value={telegramUser?.username ? `@${telegramUser.username}` : "-"}
+            />
+            <ProfileRow
+              label="Bahasa"
+              value={(telegramUser?.language_code ?? "id").toUpperCase()}
+            />
+            <ProfileRow
+              label="Telegram Premium"
+              value={telegramUser?.is_premium ? "Ya" : "Tidak"}
+            />
+            <ProfileRow label="Status VIP" value="Belum aktif" highlight />
           </div>
+
+          <button className="mt-4 w-full rounded-2xl bg-gradient-to-r from-[#F6D58B] to-[#D5A85A] py-3 font-bold text-black">
+            Upgrade ke VIP
+          </button>
         </div>
 
         <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
@@ -411,5 +554,28 @@ function BottomNav({
         </button>
       </div>
     </nav>
+  );
+}
+
+function ProfileRow({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border px-4 py-3 ${
+        highlight
+          ? "border-[#F6D58B]/40 bg-[#F6D58B]/10"
+          : "border-white/10 bg-white/5"
+      }`}
+    >
+      <p className="text-xs text-white/50">{label}</p>
+      <p className="mt-1 font-semibold text-white">{value}</p>
+    </div>
   );
 }
