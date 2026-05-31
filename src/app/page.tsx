@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 type Drama = {
-  id: number;
+  id: string;
   title: string;
   genre: string;
   year: string;
@@ -30,8 +31,27 @@ type DramaDetail = {
   episodes: DramaDetailEpisode[];
 };
 
-const categories = ["Terbaru", "Populer", "Romantis", "Action", "Kostum"];
-type Tab = "home" | "vip" | "request" | "akun";
+type VideoSubtitle = {
+  label: string;
+  lang: string;
+  url: string;
+};
+
+type EpisodeVideoData = {
+  videoUrl: string;
+  episode?: number;
+  epTitle?: string;
+  subtitles: VideoSubtitle[];
+};
+
+const categories = [
+  "Semua",
+  "Sedang Trending",
+  "Rilis Baru",
+  "Untuk Kamu",
+ ] as const;
+type Category = (typeof categories)[number];
+type Tab = "home" | "vip" | "request";
 type VipPlan = {
   id: string;
   days: number;
@@ -40,70 +60,37 @@ type VipPlan = {
   note: string;
 };
 
-type TelegramUser = {
-  id: number;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  language_code?: string;
-  is_premium?: boolean;
-};
-
-function resolveTelegramUser(): TelegramUser {
-  if (typeof window !== "undefined") {
-    const webAppUser = (
-      window as Window & {
-        Telegram?: {
-          WebApp?: {
-            initDataUnsafe?: {
-              user?: TelegramUser;
-            };
-          };
-        };
-      }
-    ).Telegram?.WebApp?.initDataUnsafe?.user;
-    if (webAppUser) {
-      return webAppUser;
-    }
-  }
-
-  return {
-    id: 11770001,
-    first_name: "Sahabat",
-    last_name: "Drama",
-    username: "dramalover",
-    language_code: "id",
-    is_premium: false,
-  };
-}
-
 const vipPlans: VipPlan[] = [
-  { id: "vip_1", days: 1, price: 12000, note: "Cocok untuk coba dulu." },
-  { id: "vip_3", days: 3, price: 30000, note: "Lebih hemat untuk maraton." },
+  { id: "vip_1", days: 1, price: 3000, note: "Cocok untuk coba dulu." },
+  { id: "vip_5", days: 5, price: 6000, note: "Lebih hemat untuk maraton." },
   {
     id: "vip_7",
     days: 7,
-    price: 60000,
+    price: 8000,
     isPopular: true,
     note: "Paling favorit pengguna.",
   },
-  { id: "vip_15", days: 15, price: 110000, note: "Buat yang nonton rutin." },
+  { id: "vip_15", days: 15, price: 13000, note: "Buat yang nonton rutin." },
   {
     id: "vip_30",
     days: 30,
-    price: 199000,
+    price: 22000,
     note: "Best value, akses paling panjang.",
   },
 ];
 
 export default function Home() {
+  const PAGE_SIZE = 12;
   const [query, setQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState<Category>("Semua");
   const [selectedDrama, setSelectedDrama] = useState<Drama | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("home");
   const [requestTitle, setRequestTitle] = useState("");
   const [requestGenre, setRequestGenre] = useState("Romantis");
   const [requestNote, setRequestNote] = useState("");
-  const [telegramUser] = useState<TelegramUser>(resolveTelegramUser);
+  const [requestSuccess, setRequestSuccess] = useState<string>("");
+  const [selectedVipPlanId, setSelectedVipPlanId] = useState<string>("vip_7");
+  const [showQrisModal, setShowQrisModal] = useState<boolean>(false);
   const [dramas, setDramas] = useState<Drama[]>([]);
   const [isLoadingDrama, setIsLoadingDrama] = useState<boolean>(false);
   const [dramaError, setDramaError] = useState<string>("");
@@ -111,6 +98,10 @@ export default function Home() {
   const [detailError, setDetailError] = useState<string>("");
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
   const [isLoadingVideoEp, setIsLoadingVideoEp] = useState<number | null>(null);
+  const [videoData, setVideoData] = useState<EpisodeVideoData | null>(null);
+  const [activeSubtitleUrl, setActiveSubtitleUrl] = useState<string>("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,8 +110,8 @@ export default function Home() {
       setDramaError("");
       try {
         const endpoint = query.trim()
-          ? `/api/dramas?q=${encodeURIComponent(query.trim())}`
-          : "/api/dramas";
+          ? `/api/dramas?q=${encodeURIComponent(query.trim())}&category=${encodeURIComponent(activeCategory)}`
+          : `/api/dramas?category=${encodeURIComponent(activeCategory)}`;
         const response = await fetch(endpoint, { cache: "no-store" });
         const json = await response.json();
         if (cancelled) return;
@@ -130,10 +121,12 @@ export default function Home() {
           return;
         }
         setDramas(json.items as Drama[]);
+        setVisibleCount(PAGE_SIZE);
       } catch {
         if (!cancelled) {
           setDramaError("Gagal memuat drama.");
           setDramas([]);
+          setVisibleCount(PAGE_SIZE);
         }
       } finally {
         if (!cancelled) setIsLoadingDrama(false);
@@ -143,7 +136,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [query]);
+  }, [query, activeCategory]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +144,8 @@ export default function Home() {
       if (!selectedDrama) {
         setDetailData(null);
         setDetailError("");
+        setVideoData(null);
+        setActiveSubtitleUrl("");
         return;
       }
       setIsLoadingDetail(true);
@@ -199,6 +194,12 @@ export default function Home() {
 
   const handleWatchEpisode = async (episode: number) => {
     if (!selectedDrama) return;
+    if (episode > 5) {
+      alert("Episode ini khusus VIP. Silakan upgrade ke paket VIP terlebih dahulu.");
+      setSelectedDrama(null);
+      setActiveTab("vip");
+      return;
+    }
     setIsLoadingVideoEp(episode);
     try {
       const response = await fetch(`/api/dramas/${selectedDrama.id}/video?ep=${episode}`, {
@@ -209,7 +210,22 @@ export default function Home() {
         alert(json?.message || "Video belum tersedia.");
         return;
       }
-      window.open(String(json.data.videoUrl), "_blank");
+      const nextVideo: EpisodeVideoData = {
+        videoUrl: String(json.data.videoUrl),
+        episode: Number(json.data.episode ?? episode),
+        epTitle: String(json.data.epTitle ?? `Episode ${episode}`),
+        subtitles: Array.isArray(json.data.subtitles)
+          ? json.data.subtitles
+              .filter((sub: { url?: string }) => Boolean(sub?.url))
+              .map((sub: { label?: string; lang?: string; url?: string }) => ({
+                label: String(sub.label ?? sub.lang ?? "Subtitle"),
+                lang: String(sub.lang ?? "id"),
+                url: String(sub.url ?? ""),
+              }))
+          : [],
+      };
+      setVideoData(nextVideo);
+      setActiveSubtitleUrl(nextVideo.subtitles[0]?.url ?? "");
     } catch {
       alert("Gagal mengambil video episode.");
     } finally {
@@ -217,7 +233,40 @@ export default function Home() {
     }
   };
 
-  const filteredDramas = useMemo(() => dramas, [dramas]);
+  const adjustSubtitleCues = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    for (const track of Array.from(video.textTracks)) {
+      track.mode = "showing";
+      const cues = track.cues;
+      if (!cues) continue;
+      for (let i = 0; i < cues.length; i += 1) {
+        const cue = cues[i] as VTTCue;
+        if (typeof cue.line !== "undefined") cue.line = -4;
+        if (typeof cue.position !== "undefined") cue.position = 50;
+      }
+    }
+  };
+
+  const handleSubmitRequest = () => {
+    if (!requestTitle.trim()) {
+      alert("Judul request wajib diisi dulu.");
+      return;
+    }
+    setRequestSuccess("Terimakasih, request telah dikirim dan akan diproses secepatnya.");
+    setRequestTitle("");
+    setRequestGenre("Romantis");
+    setRequestNote("");
+    setTimeout(() => {
+      setRequestSuccess("");
+    }, 3000);
+  };
+
+  const filteredDramas = dramas;
+  const visibleDramas = filteredDramas.slice(0, visibleCount);
+  const hasMoreDrama = visibleCount < filteredDramas.length;
+  const selectedVipPlan =
+    vipPlans.find((plan) => plan.id === selectedVipPlanId) ?? vipPlans[0];
 
   if (activeTab === "vip") {
     return (
@@ -235,8 +284,11 @@ export default function Home() {
             {vipPlans.map((plan) => (
               <button
                 key={plan.id}
+                onClick={() => setSelectedVipPlanId(plan.id)}
                 className={`w-full rounded-2xl border p-4 text-left transition ${
-                  plan.isPopular
+                  selectedVipPlanId === plan.id
+                    ? "border-cyan-300 bg-cyan-300/10 shadow-lg shadow-cyan-900/20"
+                    : plan.isPopular
                     ? "border-[#F6D58B]/60 bg-[#F6D58B]/10 shadow-lg shadow-[#F6D58B]/10"
                     : "border-white/10 bg-white/5"
                 }`}
@@ -254,19 +306,56 @@ export default function Home() {
                       Terlaris
                     </span>
                   )}
+                  {selectedVipPlanId === plan.id && (
+                    <span className="rounded-full bg-cyan-300 px-3 py-1 text-xs font-bold text-[#04252A]">
+                      Dipilih
+                    </span>
+                  )}
                 </div>
               </button>
             ))}
           </div>
 
-          <button className="mt-5 w-full rounded-2xl bg-[#F6D58B] py-3 font-bold text-black">
-            Lanjut Pembayaran
+          <button
+            onClick={() => setShowQrisModal(true)}
+            className="mt-5 w-full rounded-2xl bg-[#F6D58B] py-3 font-bold text-black"
+          >
+            Lanjut Pembayaran • VIP {selectedVipPlan.days} Hari
           </button>
-          <p className="mt-2 text-center text-xs text-white/40">
-            Harga bisa kamu ubah nanti dari admin panel.
-          </p>
           <div className="h-2" />
         </div>
+
+        {showQrisModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+            <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#101528] p-4 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-base font-bold text-white">Pembayaran QRIS</h3>
+                <button
+                  onClick={() => setShowQrisModal(false)}
+                  className="rounded-full border border-white/20 px-2 py-1 text-xs text-white/80"
+                >
+                  Tutup
+                </button>
+              </div>
+              <p className="mb-3 text-sm text-white/75">
+                Silakan scan QRIS berikut untuk melakukan pembelian VIP.
+              </p>
+              <div className="overflow-hidden rounded-xl border border-white/10 bg-white p-2">
+                <Image
+                  src="/qris.jpg"
+                  alt="QRIS Pembayaran VIP"
+                  width={800}
+                  height={800}
+                  className="h-auto w-full rounded-lg"
+                />
+              </div>
+              <p className="mt-3 text-xs text-white/55">
+                Paket dipilih: VIP {selectedVipPlan.days} Hari • Rp{" "}
+                {selectedVipPlan.price.toLocaleString("id-ID")}
+              </p>
+            </div>
+          </div>
+        )}
 
         <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
       </main>
@@ -312,9 +401,17 @@ export default function Home() {
               rows={4}
               className="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm outline-none placeholder:text-white/40 focus:border-cyan-300"
             />
-            <button className="w-full rounded-xl bg-cyan-300 py-3 font-bold text-[#0A1B25]">
+            <button
+              onClick={handleSubmitRequest}
+              className="w-full rounded-xl bg-cyan-300 py-3 font-bold text-[#0A1B25]"
+            >
               Kirim Request
             </button>
+            {requestSuccess && (
+              <div className="rounded-xl border border-emerald-300/30 bg-emerald-400/20 px-3 py-2 text-sm text-emerald-100">
+                {requestSuccess}
+              </div>
+            )}
           </div>
 
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -325,50 +422,6 @@ export default function Home() {
               <li>• Gunakan 1 judul per request.</li>
             </ul>
           </div>
-        </div>
-
-        <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
-      </main>
-    );
-  }
-
-  if (activeTab === "akun") {
-    const displayName = `${telegramUser?.first_name ?? "Pengguna"} ${
-      telegramUser?.last_name ?? ""
-    }`.trim();
-
-    return (
-      <main className="min-h-screen bg-[#080A12] text-white">
-        <div className="mx-auto max-w-md px-4 pb-24 pt-5">
-          <section className="overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-[#352C4D] via-[#171326] to-[#0B0D16] p-5 shadow-xl">
-            <p className="text-xs text-purple-200">Profil Telegram</p>
-            <h1 className="mt-1 text-2xl font-bold text-white">Akun Saya</h1>
-            <p className="mt-2 text-sm text-white/70">
-              Data user ditarik dari Telegram Mini App.
-            </p>
-          </section>
-
-          <div className="mt-5 space-y-3">
-            <ProfileRow label="Nama" value={displayName} />
-            <ProfileRow label="User ID" value={String(telegramUser?.id ?? "-")} />
-            <ProfileRow
-              label="Username"
-              value={telegramUser?.username ? `@${telegramUser.username}` : "-"}
-            />
-            <ProfileRow
-              label="Bahasa"
-              value={(telegramUser?.language_code ?? "id").toUpperCase()}
-            />
-            <ProfileRow
-              label="Telegram Premium"
-              value={telegramUser?.is_premium ? "Ya" : "Tidak"}
-            />
-            <ProfileRow label="Status VIP" value="Belum aktif" highlight />
-          </div>
-
-          <button className="mt-4 w-full rounded-2xl bg-gradient-to-r from-[#F6D58B] to-[#D5A85A] py-3 font-bold text-black">
-            Upgrade ke VIP
-          </button>
         </div>
 
         <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
@@ -401,14 +454,7 @@ export default function Home() {
                 <h1 className="text-2xl font-bold">{selectedDrama.title}</h1>
                 <p className="mt-1 text-sm text-white/60">
                   ⭐ {selectedDrama.rating} • {selectedDrama.year} •{" "}
-                  {selectedDrama.episodes} Episode
-                </p>
-              </div>
-
-              <div>
-                <h2 className="mb-2 font-semibold">Sinopsis</h2>
-                <p className="text-sm leading-6 text-white/70">
-                  {selectedDrama.synopsis}
+                  {detailData?.totalEpisodes ?? selectedDrama.episodes} Episode
                 </p>
               </div>
 
@@ -420,16 +466,62 @@ export default function Home() {
                 )}
                 {!isLoadingDetail && !detailError && (
                   <div className="space-y-3">
-                    {(detailData?.episodes ?? []).slice(0, 12).map((episode) => (
-                      <EpisodeRow
-                        key={episode.episode}
-                        part={`Part ${episode.episode}`}
-                        status={episode.free ? "Gratis" : "VIP"}
-                        isFree={episode.free}
-                        isLoading={isLoadingVideoEp === episode.episode}
-                        onClick={() => handleWatchEpisode(episode.episode)}
-                      />
-                    ))}
+                    {(detailData?.episodes ?? []).map((episode) => {
+                      const isEpisodeFree = episode.episode <= 5;
+                      return (
+                        <div key={episode.episode} className="space-y-3">
+                          {videoData && videoData.episode === episode.episode && (
+                            <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold">
+                                  Sedang Diputar:{" "}
+                                  {videoData.epTitle ?? `Episode ${videoData.episode ?? episode.episode}`}
+                                </h3>
+                                {videoData.subtitles.length > 0 && (
+                                  <select
+                                    value={activeSubtitleUrl}
+                                    onChange={(event) => setActiveSubtitleUrl(event.target.value)}
+                                    className="rounded-lg border border-white/20 bg-[#0E1220] px-2 py-1 text-xs text-white outline-none"
+                                  >
+                                    {videoData.subtitles.map((sub) => (
+                                      <option key={sub.url} value={sub.url}>
+                                        {sub.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+                              <video
+                                ref={videoRef}
+                                key={`${videoData.videoUrl}-${activeSubtitleUrl}`}
+                                controls
+                                className="h-auto w-full rounded-xl"
+                                onLoadedMetadata={adjustSubtitleCues}
+                              >
+                                <source src={videoData.videoUrl} />
+                                {activeSubtitleUrl && (
+                                  <track
+                                    kind="subtitles"
+                                    srcLang="id"
+                                    label="Subtitle"
+                                    src={activeSubtitleUrl}
+                                    default
+                                    onLoad={adjustSubtitleCues}
+                                  />
+                                )}
+                              </video>
+                            </div>
+                          )}
+                          <EpisodeRow
+                            part={`Part ${episode.episode}`}
+                            status={isEpisodeFree ? "Gratis" : "VIP"}
+                            isFree={isEpisodeFree}
+                            isLoading={isLoadingVideoEp === episode.episode}
+                            onClick={() => handleWatchEpisode(episode.episode)}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -472,33 +564,18 @@ export default function Home() {
           />
         </div>
 
-        <section className="mb-6 overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-purple-900 via-[#161827] to-[#0C0D15] p-5 shadow-xl">
-          <p className="mb-2 text-xs text-purple-200">Drama Pilihan Hari Ini</p>
-          <h2 className="max-w-[240px] text-2xl font-bold">
-            {dramas[0]?.title ?? "Belum ada rekomendasi"}
-          </h2>
-          <p className="mt-2 max-w-[260px] text-sm text-white/70">
-            {dramas[0]?.synopsis ?? "Hubungkan dulu ke sumber drama untuk menampilkan konten."}
-          </p>
-          <button
-            onClick={() => dramas[0] && setSelectedDrama(dramas[0])}
-            className="mt-5 rounded-xl bg-[#F6D58B] px-4 py-2 text-sm font-bold text-black"
-          >
-            Lihat Sekarang
-          </button>
-        </section>
-
         <section className="mb-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-bold">Kategori</h2>
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {categories.map((category, index) => (
+            {categories.map((category) => (
               <button
                 key={category}
+                onClick={() => setActiveCategory(category)}
                 className={`whitespace-nowrap rounded-full px-4 py-2 text-xs ${
-                  index === 0
+                  activeCategory === category
                     ? "bg-purple-600 text-white"
                     : "border border-white/10 bg-white/5 text-white/70"
                 }`}
@@ -512,7 +589,7 @@ export default function Home() {
         <section>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-bold">Lagi Populer</h2>
-            <button className="text-xs text-purple-300">Lihat Semua</button>
+            <button className="text-xs text-purple-300">{activeCategory}</button>
           </div>
 
           {isLoadingDrama && <p className="mb-3 text-xs text-white/60">Memuat data drama...</p>}
@@ -521,7 +598,7 @@ export default function Home() {
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            {filteredDramas.map((drama) => (
+            {visibleDramas.map((drama) => (
               <button
                 key={drama.id}
                 onClick={() => setSelectedDrama(drama)}
@@ -550,6 +627,19 @@ export default function Home() {
               </button>
             ))}
           </div>
+          {!isLoadingDrama && hasMoreDrama && (
+            <button
+              onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+              className="mt-4 w-full rounded-xl border border-white/15 bg-white/10 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
+            >
+              Load More ({filteredDramas.length - visibleCount} lagi)
+            </button>
+          )}
+          {!isLoadingDrama && filteredDramas.length === 0 && (
+            <p className="mt-3 text-xs text-white/60">
+              Tidak ada data untuk kategori ini.
+            </p>
+          )}
         </section>
       </div>
 
@@ -591,7 +681,6 @@ function EpisodeRow({
 
         <div>
           <p className="font-semibold">{part}</p>
-          <p className="text-xs text-white/50">45 menit</p>
         </div>
       </div>
 
@@ -615,7 +704,7 @@ function BottomNav({
 }) {
   return (
     <nav className="fixed bottom-0 left-1/2 w-full max-w-md -translate-x-1/2 border-t border-white/10 bg-[#0B0D16]/95 px-4 py-3 backdrop-blur">
-      <div className="grid grid-cols-4 text-center text-xs">
+      <div className="grid grid-cols-3 text-center text-xs">
         <button
           onClick={() => onChangeTab("home")}
           className={activeTab === "home" ? "text-purple-300" : "text-white/60"}
@@ -637,37 +726,7 @@ function BottomNav({
           <div className="text-lg">📝</div>
           Request
         </button>
-        <button
-          onClick={() => onChangeTab("akun")}
-          className={activeTab === "akun" ? "text-purple-300" : "text-white/60"}
-        >
-          <div className="text-lg">👤</div>
-          Akun
-        </button>
       </div>
     </nav>
-  );
-}
-
-function ProfileRow({
-  label,
-  value,
-  highlight = false,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border px-4 py-3 ${
-        highlight
-          ? "border-[#F6D58B]/40 bg-[#F6D58B]/10"
-          : "border-white/10 bg-white/5"
-      }`}
-    >
-      <p className="text-xs text-white/50">{label}</p>
-      <p className="mt-1 font-semibold text-white">{value}</p>
-    </div>
   );
 }

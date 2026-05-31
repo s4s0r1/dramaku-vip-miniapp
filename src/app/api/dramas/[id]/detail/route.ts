@@ -26,17 +26,47 @@ type DramsiResponse = {
   message?: string;
 };
 
+function splitSourceId(raw: string): { source: string; id: string } {
+  const [source, ...rest] = raw.split(":");
+  if (!source || rest.length === 0) return { source: "dramabite", id: raw };
+  return { source, id: rest.join(":") };
+}
+
+function normalizeDetail(data: DramsiDetailData): DramsiDetailData {
+  const episodes = Array.isArray(data.episodes)
+    ? data.episodes.map((ep, idx) => ({
+        episode: Number(ep.episode ?? idx + 1),
+        title: ep.title || `Episode ${idx + 1}`,
+        free: Boolean(ep.free),
+        locked: Boolean(ep.locked),
+      }))
+    : [];
+
+  return {
+    id: String(data.id ?? ""),
+    title: data.title || "Tanpa Judul",
+    synopsis: data.synopsis || "Sinopsis belum tersedia.",
+    cover: data.cover || "",
+    totalEpisodes: Number(data.totalEpisodes ?? episodes.length),
+    episodes,
+  };
+}
+
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const params = await context.params;
-    const id = params.id;
-    const lang = req.nextUrl.searchParams.get("lang") ?? "in";
+    const { source, id } = splitSourceId(params.id);
+    void req;
 
-    const upstream = `${DRAMSI_BASE_URL}/dramanova/detail?id=${encodeURIComponent(id)}&lang=${encodeURIComponent(lang)}`;
-    const response = await fetch(upstream, {
+    const sourceUrl =
+      source === "goodshort"
+        ? `${DRAMSI_BASE_URL}/goodshort/detail?id=${encodeURIComponent(id)}`
+        : `${DRAMSI_BASE_URL}/dramabite/detail?id=${encodeURIComponent(id)}&lang=id`;
+
+    const response = await fetch(sourceUrl, {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
@@ -50,7 +80,7 @@ export async function GET(
       return NextResponse.json({ ok: false, message: json?.message ?? "Detail drama tidak tersedia" }, { status: 422 });
     }
 
-    return NextResponse.json({ ok: true, data: json.result.data });
+    return NextResponse.json({ ok: true, source, data: normalizeDetail(json.result.data) });
   } catch {
     return NextResponse.json({ ok: false, message: "Gagal mengambil detail drama" }, { status: 500 });
   }
