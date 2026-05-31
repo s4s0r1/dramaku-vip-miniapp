@@ -14,60 +14,21 @@ type Drama = {
   synopsis: string;
 };
 
-const dramas: Drama[] = [
-  {
-    id: 1,
-    title: "Cinta di Istana Awan",
-    genre: "Romantis • Kostum",
-    year: "2024",
-    episodes: 36,
-    rating: 4.8,
-    isVip: true,
-    image:
-      "https://images.unsplash.com/photo-1520975682031-a59f7a996af3?auto=format&fit=crop&w=800&q=80",
-    synopsis:
-      "Putri dari kerajaan kecil bertemu pangeran dingin dari negeri seberang. Di tengah intrik istana, cinta mereka diuji oleh rahasia dan takdir.",
-  },
-  {
-    id: 2,
-    title: "Bayang-Bayang Pedang",
-    genre: "Action • Kostum",
-    year: "2023",
-    episodes: 28,
-    rating: 4.7,
-    isVip: true,
-    image:
-      "https://images.unsplash.com/photo-1518709268805-4e9042af2176?auto=format&fit=crop&w=800&q=80",
-    synopsis:
-      "Seorang pendekar muda mencari kebenaran di balik runtuhnya keluarganya dan terjebak dalam perebutan kekuasaan kerajaan.",
-  },
-  {
-    id: 3,
-    title: "Bunga di Musim Dingin",
-    genre: "Romantis",
-    year: "2025",
-    episodes: 24,
-    rating: 4.9,
-    isVip: false,
-    image:
-      "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?auto=format&fit=crop&w=800&q=80",
-    synopsis:
-      "Kisah cinta hangat antara dua orang yang bertemu kembali setelah bertahun-tahun berpisah.",
-  },
-  {
-    id: 4,
-    title: "Takdir Kita Berdua",
-    genre: "Drama • Romantis",
-    year: "2024",
-    episodes: 30,
-    rating: 4.6,
-    isVip: true,
-    image:
-      "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=800&q=80",
-    synopsis:
-      "Dua jiwa yang berbeda dunia dipertemukan oleh kejadian tak terduga dan harus memilih antara cinta atau keluarga.",
-  },
-];
+type DramaDetailEpisode = {
+  episode: number;
+  title: string;
+  free: boolean;
+  locked: boolean;
+};
+
+type DramaDetail = {
+  id: string;
+  title: string;
+  synopsis: string;
+  cover: string;
+  totalEpisodes: number;
+  episodes: DramaDetailEpisode[];
+};
 
 const categories = ["Terbaru", "Populer", "Romantis", "Action", "Kostum"];
 type Tab = "home" | "vip" | "request" | "akun";
@@ -87,6 +48,34 @@ type TelegramUser = {
   language_code?: string;
   is_premium?: boolean;
 };
+
+function resolveTelegramUser(): TelegramUser {
+  if (typeof window !== "undefined") {
+    const webAppUser = (
+      window as Window & {
+        Telegram?: {
+          WebApp?: {
+            initDataUnsafe?: {
+              user?: TelegramUser;
+            };
+          };
+        };
+      }
+    ).Telegram?.WebApp?.initDataUnsafe?.user;
+    if (webAppUser) {
+      return webAppUser;
+    }
+  }
+
+  return {
+    id: 11770001,
+    first_name: "Sahabat",
+    last_name: "Drama",
+    username: "dramalover",
+    language_code: "id",
+    is_premium: false,
+  };
+}
 
 const vipPlans: VipPlan[] = [
   { id: "vip_1", days: 1, price: 12000, note: "Cocok untuk coba dulu." },
@@ -114,41 +103,121 @@ export default function Home() {
   const [requestTitle, setRequestTitle] = useState("");
   const [requestGenre, setRequestGenre] = useState("Romantis");
   const [requestNote, setRequestNote] = useState("");
-  const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
+  const [telegramUser] = useState<TelegramUser>(resolveTelegramUser);
+  const [dramas, setDramas] = useState<Drama[]>([]);
+  const [isLoadingDrama, setIsLoadingDrama] = useState<boolean>(false);
+  const [dramaError, setDramaError] = useState<string>("");
+  const [detailData, setDetailData] = useState<DramaDetail | null>(null);
+  const [detailError, setDetailError] = useState<string>("");
+  const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
+  const [isLoadingVideoEp, setIsLoadingVideoEp] = useState<number | null>(null);
 
   useEffect(() => {
-    const webAppUser = (
-      window as Window & {
-        Telegram?: {
-          WebApp?: {
-            initDataUnsafe?: {
-              user?: TelegramUser;
-            };
-          };
-        };
+    let cancelled = false;
+    const loadDramas = async () => {
+      setIsLoadingDrama(true);
+      setDramaError("");
+      try {
+        const endpoint = query.trim()
+          ? `/api/dramas?q=${encodeURIComponent(query.trim())}`
+          : "/api/dramas";
+        const response = await fetch(endpoint, { cache: "no-store" });
+        const json = await response.json();
+        if (cancelled) return;
+        if (!json?.ok || !Array.isArray(json?.items)) {
+          setDramaError("Data drama belum tersedia.");
+          setDramas([]);
+          return;
+        }
+        setDramas(json.items as Drama[]);
+      } catch {
+        if (!cancelled) {
+          setDramaError("Gagal memuat drama.");
+          setDramas([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingDrama(false);
       }
-    ).Telegram?.WebApp?.initDataUnsafe?.user;
-
-    if (webAppUser) {
-      setTelegramUser(webAppUser);
-      return;
-    }
-
-    setTelegramUser({
-      id: 11770001,
-      first_name: "Sahabat",
-      last_name: "Drama",
-      username: "dramalover",
-      language_code: "id",
-      is_premium: false,
-    });
-  }, []);
-
-  const filteredDramas = useMemo(() => {
-    return dramas.filter((drama) =>
-      drama.title.toLowerCase().includes(query.toLowerCase())
-    );
+    };
+    loadDramas();
+    return () => {
+      cancelled = true;
+    };
   }, [query]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadDetail = async () => {
+      if (!selectedDrama) {
+        setDetailData(null);
+        setDetailError("");
+        return;
+      }
+      setIsLoadingDetail(true);
+      setDetailError("");
+      try {
+        const response = await fetch(`/api/dramas/${selectedDrama.id}/detail`, {
+          cache: "no-store",
+        });
+        const json = await response.json();
+        if (cancelled) return;
+        if (!json?.ok || !json?.data) {
+          setDetailData(null);
+          setDetailError("Detail episode belum tersedia.");
+          return;
+        }
+        const episodes = Array.isArray(json.data.episodes)
+          ? json.data.episodes.map((ep: { episode?: number; title?: string; free?: boolean; locked?: boolean }, idx: number) => ({
+              episode: Number(ep.episode ?? idx + 1),
+              title: ep.title || `Episode ${idx + 1}`,
+              free: Boolean(ep.free),
+              locked: Boolean(ep.locked),
+            }))
+          : [];
+        setDetailData({
+          id: String(json.data.id ?? selectedDrama.id),
+          title: json.data.title || selectedDrama.title,
+          synopsis: json.data.synopsis || selectedDrama.synopsis,
+          cover: json.data.cover || selectedDrama.image,
+          totalEpisodes: Number(json.data.totalEpisodes ?? episodes.length),
+          episodes,
+        });
+      } catch {
+        if (!cancelled) {
+          setDetailData(null);
+          setDetailError("Gagal memuat detail drama.");
+        }
+      } finally {
+        if (!cancelled) setIsLoadingDetail(false);
+      }
+    };
+    loadDetail();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDrama]);
+
+  const handleWatchEpisode = async (episode: number) => {
+    if (!selectedDrama) return;
+    setIsLoadingVideoEp(episode);
+    try {
+      const response = await fetch(`/api/dramas/${selectedDrama.id}/video?ep=${episode}`, {
+        cache: "no-store",
+      });
+      const json = await response.json();
+      if (!json?.ok || !json?.data?.videoUrl) {
+        alert(json?.message || "Video belum tersedia.");
+        return;
+      }
+      window.open(String(json.data.videoUrl), "_blank");
+    } catch {
+      alert("Gagal mengambil video episode.");
+    } finally {
+      setIsLoadingVideoEp(null);
+    }
+  };
+
+  const filteredDramas = useMemo(() => dramas, [dramas]);
 
   if (activeTab === "vip") {
     return (
@@ -345,18 +414,31 @@ export default function Home() {
 
               <div>
                 <h2 className="mb-3 font-semibold">Episode</h2>
-
-                <div className="space-y-3">
-                  <EpisodeRow part="Part 1" status="Gratis" isFree />
-                  <EpisodeRow part="Part 2" status="VIP" />
-                  <EpisodeRow part="Part 3" status="VIP" />
-                  <EpisodeRow part="Part 4" status="VIP" />
-                  <EpisodeRow part="Part 5 dan seterusnya" status="VIP" />
-                </div>
+                {isLoadingDetail && <p className="text-sm text-white/60">Memuat episode...</p>}
+                {!isLoadingDetail && detailError && (
+                  <p className="text-sm text-red-300">{detailError}</p>
+                )}
+                {!isLoadingDetail && !detailError && (
+                  <div className="space-y-3">
+                    {(detailData?.episodes ?? []).slice(0, 12).map((episode) => (
+                      <EpisodeRow
+                        key={episode.episode}
+                        part={`Part ${episode.episode}`}
+                        status={episode.free ? "Gratis" : "VIP"}
+                        isFree={episode.free}
+                        isLoading={isLoadingVideoEp === episode.episode}
+                        onClick={() => handleWatchEpisode(episode.episode)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <button className="w-full rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 py-4 font-bold shadow-lg shadow-purple-900/40">
-                📺 Tonton di Telegram
+              <button
+                onClick={() => handleWatchEpisode(1)}
+                className="w-full rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 py-4 font-bold shadow-lg shadow-purple-900/40"
+              >
+                {isLoadingVideoEp === 1 ? "Membuka..." : "📺 Tonton Episode 1"}
               </button>
             </div>
           </div>
@@ -393,13 +475,13 @@ export default function Home() {
         <section className="mb-6 overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-purple-900 via-[#161827] to-[#0C0D15] p-5 shadow-xl">
           <p className="mb-2 text-xs text-purple-200">Drama Pilihan Hari Ini</p>
           <h2 className="max-w-[240px] text-2xl font-bold">
-            Cinta di Istana Awan
+            {dramas[0]?.title ?? "Belum ada rekomendasi"}
           </h2>
           <p className="mt-2 max-w-[260px] text-sm text-white/70">
-            Part 1 gratis, episode lengkap khusus VIP.
+            {dramas[0]?.synopsis ?? "Hubungkan dulu ke sumber drama untuk menampilkan konten."}
           </p>
           <button
-            onClick={() => setSelectedDrama(dramas[0])}
+            onClick={() => dramas[0] && setSelectedDrama(dramas[0])}
             className="mt-5 rounded-xl bg-[#F6D58B] px-4 py-2 text-sm font-bold text-black"
           >
             Lihat Sekarang
@@ -432,6 +514,11 @@ export default function Home() {
             <h2 className="font-bold">Lagi Populer</h2>
             <button className="text-xs text-purple-300">Lihat Semua</button>
           </div>
+
+          {isLoadingDrama && <p className="mb-3 text-xs text-white/60">Memuat data drama...</p>}
+          {!isLoadingDrama && dramaError && (
+            <p className="mb-3 text-xs text-red-300">{dramaError}</p>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             {filteredDramas.map((drama) => (
@@ -475,18 +562,23 @@ function EpisodeRow({
   part,
   status,
   isFree = false,
+  isLoading = false,
+  onClick,
 }: {
   part: string;
   status: string;
   isFree?: boolean;
+  isLoading?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <div
+    <button
+      onClick={onClick}
       className={`flex items-center justify-between rounded-2xl border px-4 py-3 ${
         isFree
           ? "border-purple-400 bg-purple-500/15"
           : "border-white/10 bg-white/5"
-      }`}
+      } w-full text-left`}
     >
       <div className="flex items-center gap-3">
         <div
@@ -508,9 +600,9 @@ function EpisodeRow({
           isFree ? "bg-green-500/20 text-green-300" : "bg-[#F6D58B] text-black"
         }`}
       >
-        {status}
+        {isLoading ? "Loading..." : status}
       </span>
-    </div>
+    </button>
   );
 }
 
