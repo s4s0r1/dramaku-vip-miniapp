@@ -70,16 +70,99 @@ const dramas: Drama[] = [
 ];
 
 const categories = ["Terbaru", "Populer", "Romantis", "Action", "Kostum"];
+type Tab = "home" | "vip" | "request" | "akun";
 
 export default function Home() {
   const [query, setQuery] = useState("");
   const [selectedDrama, setSelectedDrama] = useState<Drama | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>("home");
 
   const filteredDramas = useMemo(() => {
     return dramas.filter((drama) =>
       drama.title.toLowerCase().includes(query.toLowerCase())
     );
   }, [query]);
+
+  if (activeTab === "vip") {
+    return (
+      <main className="min-h-screen bg-[#080A12] text-white">
+        <div className="mx-auto max-w-md px-4 pb-24 pt-5">
+          <h1 className="text-2xl font-bold text-[#F6D58B]">Paket VIP</h1>
+          <p className="mt-1 text-sm text-white/60">
+            Pilih paket akses premium DramaKu VIP.
+          </p>
+
+          <div className="mt-5 space-y-3">
+            {[
+              { title: "VIP 1 Hari", desc: "Akses penuh selama 24 jam." },
+              { title: "VIP 7 Hari", desc: "Paket hemat untuk seminggu." },
+              { title: "VIP 10 Hari", desc: "Akses paling populer." },
+            ].map((plan) => (
+              <button
+                key={plan.title}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
+              >
+                <h2 className="font-bold">{plan.title}</h2>
+                <p className="mt-1 text-sm text-white/60">{plan.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
+      </main>
+    );
+  }
+
+  if (activeTab === "request") {
+    return (
+      <main className="min-h-screen bg-[#080A12] text-white">
+        <div className="mx-auto max-w-md px-4 pb-24 pt-5">
+          <h1 className="text-2xl font-bold text-[#F6D58B]">Request Film</h1>
+          <p className="mt-1 text-sm text-white/60">
+            Tulis judul drama yang kamu mau, nanti kami cek untuk ditambahkan.
+          </p>
+
+          <div className="mt-5 space-y-3">
+            <input
+              placeholder="Judul drama / film"
+              className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm outline-none placeholder:text-white/40"
+            />
+            <textarea
+              placeholder="Catatan tambahan (opsional)"
+              rows={4}
+              className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm outline-none placeholder:text-white/40"
+            />
+            <button className="w-full rounded-2xl bg-[#F6D58B] py-3 font-bold text-black">
+              Kirim Request
+            </button>
+          </div>
+        </div>
+
+        <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
+      </main>
+    );
+  }
+
+  if (activeTab === "akun") {
+    return (
+      <main className="min-h-screen bg-[#080A12] text-white">
+        <div className="mx-auto max-w-md px-4 pb-24 pt-5">
+          <h1 className="text-2xl font-bold text-[#F6D58B]">Akun Saya</h1>
+          <p className="mt-1 text-sm text-white/60">
+            Informasi akun dan status langganan VIP kamu.
+          </p>
+
+          <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-sm text-white/60">Status VIP</p>
+            <p className="mt-1 font-bold">Belum aktif</p>
+          </div>
+        </div>
+
+        <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
+      </main>
+    );
+  }
 
   if (selectedDrama) {
     return (
@@ -136,7 +219,7 @@ export default function Home() {
           </div>
         </div>
 
-        <BottomNav />
+        <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
       </main>
     );
   }
@@ -240,7 +323,7 @@ export default function Home() {
         </section>
       </div>
 
-      <BottomNav />
+      <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
     </main>
   );
 }
@@ -288,23 +371,41 @@ function EpisodeRow({
   );
 }
 
-function BottomNav() {
+function BottomNav({
+  activeTab,
+  onChangeTab,
+}: {
+  activeTab: Tab;
+  onChangeTab: (tab: Tab) => void;
+}) {
   return (
     <nav className="fixed bottom-0 left-1/2 w-full max-w-md -translate-x-1/2 border-t border-white/10 bg-[#0B0D16]/95 px-4 py-3 backdrop-blur">
       <div className="grid grid-cols-4 text-center text-xs">
-        <button className="text-purple-300">
+        <button
+          onClick={() => onChangeTab("home")}
+          className={activeTab === "home" ? "text-purple-300" : "text-white/60"}
+        >
           <div className="text-lg">🏠</div>
           Home
         </button>
-        <button className="text-white/60">
+        <button
+          onClick={() => onChangeTab("vip")}
+          className={activeTab === "vip" ? "text-purple-300" : "text-white/60"}
+        >
           <div className="text-lg">👑</div>
           VIP
         </button>
-        <button className="text-white/60">
+        <button
+          onClick={() => onChangeTab("request")}
+          className={activeTab === "request" ? "text-purple-300" : "text-white/60"}
+        >
           <div className="text-lg">📝</div>
           Request
         </button>
-        <button className="text-white/60">
+        <button
+          onClick={() => onChangeTab("akun")}
+          className={activeTab === "akun" ? "text-purple-300" : "text-white/60"}
+        >
           <div className="text-lg">👤</div>
           Akun
         </button>
